@@ -101,13 +101,13 @@ async function getBrowser() {
         "--disable-blink-features=AutomationControlled",
         "--disable-dev-shm-usage",
         "--disable-gpu",
-        "--disable-software-rasterizer",
-        "--no-zygote",
         "--window-size=1920,1080",
+        "--lang=en-GB,en",
       ],
     };
     if (process.env.PUPPETEER_EXECUTABLE_PATH) {
       launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+      console.log(`[Scraper] Using Chrome at: ${process.env.PUPPETEER_EXECUTABLE_PATH}`);
     }
     console.log("[Scraper] Launching browser...");
     browserInstance = await puppeteer.launch(launchOptions);

@@ -1,11 +1,12 @@
 FROM node:20-slim
 
-# Install dependencies for Chrome
+# Install Google Chrome (not Chromium) for better Cloudflare compatibility
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
     ca-certificates \
     fonts-liberation \
+    fonts-noto-color-emoji \
     libasound2 \
     libatk-bridge2.0-0 \
     libatk1.0-0 \
@@ -20,14 +21,20 @@ RUN apt-get update && apt-get install -y \
     libxcomposite1 \
     libxdamage1 \
     libxrandr2 \
+    libxshmfence1 \
     xdg-utils \
     --no-install-recommends \
+    && wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-archive-keyring.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/google-archive-keyring.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
+    && apt-get update \
+    && apt-get install -y google-chrome-stable --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
+# Use the installed Chrome instead of Puppeteer downloading Chromium
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
 
-# Set cache dir before npm ci so Puppeteer downloads Chrome to the right place
-ENV PUPPETEER_CACHE_DIR=/app/.cache/puppeteer
+WORKDIR /app
 
 COPY package*.json ./
 RUN npm ci
