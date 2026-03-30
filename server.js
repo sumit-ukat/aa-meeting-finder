@@ -1,11 +1,27 @@
 /**
- * Express server for AA Meeting Finder connector.
- * Provides API endpoints for searching in-person and online AA meetings.
+ * Express server for Recovery Meeting Finder connector.
+ * Provides unified API for searching AA, CA, and NA meetings.
  */
 
 const express = require("express");
 const path = require("path");
-const { searchMeetings, getMeetingDetail, closeBrowser, VALID_DAYS, VALID_TIMES } = require("./scraper");
+
+// Import all scrapers
+const aa = require("./scraper");
+const ca = require("./scraper-ca");
+const na = require("./scraper-na");
+
+const SCRAPERS = {
+  aa: aa,
+  ca: ca,
+  na: na,
+};
+
+const FELLOWSHIP_NAMES = {
+  aa: "Alcoholics Anonymous",
+  ca: "Cocaine Anonymous",
+  na: "Narcotics Anonymous",
+};
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -22,19 +38,19 @@ app.use("/api", (req, res, next) => {
 // Serve static frontend
 app.use(express.static(path.join(__dirname, "static")));
 
-// API: Search meetings (with 60s timeout)
+// API: Search meetings (with 90s timeout for FlareSolverr)
 app.get("/api/search", async (req, res) => {
-  // Set a 60-second timeout for the response
-  req.setTimeout(65000);
-  res.setTimeout(65000);
+  req.setTimeout(95000);
+  res.setTimeout(95000);
 
   const timeout = setTimeout(() => {
     if (!res.headersSent) {
-      res.status(504).json({ error: "Request timed out. The AA website may be slow or blocking requests." });
+      res.status(504).json({ error: "Request timed out. The source website may be slow or blocking requests." });
     }
-  }, 60000);
+  }, 90000);
 
   try {
+    const fellowship = (req.query.fellowship || "aa").toLowerCase();
     const formType = req.query.form_type || "in_person";
     const location = (req.query.location || "").trim();
     const country = req.query.country || "United Kingdom";
@@ -43,19 +59,29 @@ app.get("/api/search", async (req, res) => {
     const sort = req.query.sort || null;
     const page = parseInt(req.query.page, 10) || 1;
 
+    const scraper = SCRAPERS[fellowship];
+    if (!scraper) {
+      clearTimeout(timeout);
+      return res.status(400).json({
+        error: `Unknown fellowship: ${fellowship}. Valid options: aa, ca, na`,
+      });
+    }
+
     if (formType === "in_person" && !location) {
       clearTimeout(timeout);
       return res.status(400).json({ error: "Location is required for in-person meetings" });
     }
 
     const days = daysParam
-      ? daysParam.split(",").filter((d) => VALID_DAYS.includes(d.trim()))
+      ? daysParam.split(",").filter((d) => scraper.VALID_DAYS.includes(d.trim()))
       : null;
     const times = timesParam
-      ? timesParam.split(",").filter((t) => VALID_TIMES.includes(t.trim()))
+      ? timesParam.split(",").filter((t) => scraper.VALID_TIMES.includes(t.trim()))
       : null;
 
-    const result = await searchMeetings({
+    console.log(`[Server] Searching ${fellowship.toUpperCase()} meetings: ${formType}, location=${location || 'any'}, page=${page}`);
+
+    const result = await scraper.searchMeetings({
       formType,
       location: location || null,
       country,
@@ -64,6 +90,10 @@ app.get("/api/search", async (req, res) => {
       sort,
       page,
     });
+
+    // Add fellowship info to the result
+    result.fellowship = fellowship;
+    result.fellowship_name = FELLOWSHIP_NAMES[fellowship] || fellowship;
 
     clearTimeout(timeout);
     if (!res.headersSent) {
@@ -78,14 +108,14 @@ app.get("/api/search", async (req, res) => {
   }
 });
 
-// API: Meeting detail
+// API: Meeting detail (AA only for now)
 app.get("/api/meeting/:id", async (req, res) => {
   try {
     const meetingId = parseInt(req.params.id, 10);
     if (isNaN(meetingId)) {
       return res.status(400).json({ error: "Invalid meeting ID" });
     }
-    const detail = await getMeetingDetail(meetingId);
+    const detail = await aa.getMeetingDetail(meetingId);
     if (!detail) {
       return res.status(404).json({ error: "Could not fetch meeting details" });
     }
@@ -99,14 +129,18 @@ app.get("/api/meeting/:id", async (req, res) => {
 // Graceful shutdown
 process.on("SIGINT", async () => {
   console.log("\nShutting down...");
-  await closeBrowser();
+  await aa.closeBrowser();
+  await ca.closeBrowser();
+  await na.closeBrowser();
   process.exit(0);
 });
 process.on("SIGTERM", async () => {
-  await closeBrowser();
+  await aa.closeBrowser();
+  await ca.closeBrowser();
+  await na.closeBrowser();
   process.exit(0);
 });
 
 app.listen(PORT, () => {
-  console.log(`AA Meeting Finder running at http://localhost:${PORT}`);
+  console.log(`Recovery Meeting Finder running at http://localhost:${PORT}`);
 });
