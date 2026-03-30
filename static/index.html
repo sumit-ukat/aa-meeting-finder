@@ -58,15 +58,14 @@
             flex: 1;
             min-width: 200px;
         }
-        .form-group label {
+        .form-group label.group-label {
             display: block;
             font-weight: 600;
             font-size: 0.85rem;
             margin-bottom: 0.4rem;
             color: var(--text);
         }
-        .form-group input,
-        .form-group select {
+        .form-group input {
             width: 100%;
             padding: 0.6rem 0.8rem;
             border: 1.5px solid var(--border);
@@ -74,8 +73,7 @@
             font-size: 0.95rem;
             transition: border-color 0.2s;
         }
-        .form-group input:focus,
-        .form-group select:focus {
+        .form-group input:focus {
             outline: none;
             border-color: var(--primary-light);
         }
@@ -108,13 +106,13 @@
             background: var(--tag-bg);
         }
 
-        /* Checkbox groups */
-        .checkbox-group {
+        /* Day chips */
+        .day-chips {
             display: flex;
             flex-wrap: wrap;
             gap: 0.5rem;
         }
-        .checkbox-group label {
+        .day-chips label {
             display: flex;
             align-items: center;
             gap: 0.3rem;
@@ -126,15 +124,67 @@
             transition: all 0.2s;
             user-select: none;
         }
-        .checkbox-group label:hover {
+        .day-chips label:hover {
             border-color: var(--primary-light);
         }
-        .checkbox-group input[type="checkbox"] {
+        .day-chips input[type="checkbox"] {
             accent-color: var(--primary);
         }
-        .checkbox-group input[type="checkbox"]:checked + span {
+        .day-chips input[type="checkbox"]:checked + span {
             color: var(--primary);
             font-weight: 600;
+        }
+
+        /* Time Slot Cards */
+        .time-slots {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 0.6rem;
+        }
+        .time-slot {
+            position: relative;
+            cursor: pointer;
+            user-select: none;
+        }
+        .time-slot input[type="checkbox"] {
+            position: absolute;
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .time-slot .slot-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.3rem;
+            padding: 0.75rem 0.5rem;
+            border: 1.5px solid var(--border);
+            border-radius: 10px;
+            background: var(--card-bg);
+            transition: all 0.2s;
+        }
+        .time-slot:hover .slot-card {
+            border-color: var(--primary-light);
+            background: #f8fbff;
+        }
+        .time-slot input:checked + .slot-card {
+            border-color: var(--primary);
+            background: var(--tag-bg);
+            box-shadow: 0 0 0 1px var(--primary);
+        }
+        .slot-icon {
+            font-size: 1.4rem;
+            line-height: 1;
+        }
+        .slot-label {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text);
+        }
+        .slot-range {
+            font-size: 0.7rem;
+            color: var(--text-light);
+            font-weight: 400;
         }
 
         .search-btn {
@@ -331,6 +381,7 @@
             }
             .meeting-side { text-align: left; }
             .form-group { min-width: 100%; }
+            .time-slots { grid-template-columns: repeat(2, 1fr); }
         }
     </style>
 </head>
@@ -349,51 +400,16 @@
             </div>
 
             <div class="form-row location-row visible" id="location-row">
-                <div class="form-group" style="flex:2">
-                    <label for="location">Town, City, or Postcode</label>
+                <div class="form-group">
+                    <label class="group-label" for="location">Town, City, or Postcode</label>
                     <input type="text" id="location" placeholder="e.g. Bedford, MK40 1SQ, London..." />
-                </div>
-                <div class="form-group" style="flex:1">
-                    <label for="country">Country</label>
-                    <select id="country">
-                        <option value="United Kingdom" selected>United Kingdom</option>
-                        <option value="Albania">Albania</option>
-                        <option value="Austria">Austria</option>
-                        <option value="Belgium">Belgium</option>
-                        <option value="Bulgaria">Bulgaria</option>
-                        <option value="Croatia">Croatia</option>
-                        <option value="Cyprus">Cyprus</option>
-                        <option value="Czechia">Czechia</option>
-                        <option value="Denmark">Denmark</option>
-                        <option value="Estonia">Estonia</option>
-                        <option value="Finland">Finland</option>
-                        <option value="France">France</option>
-                        <option value="Germany">Germany</option>
-                        <option value="Greece">Greece</option>
-                        <option value="Hungary">Hungary</option>
-                        <option value="Iceland">Iceland</option>
-                        <option value="Ireland">Ireland</option>
-                        <option value="Italy">Italy</option>
-                        <option value="Latvia">Latvia</option>
-                        <option value="Lithuania">Lithuania</option>
-                        <option value="Luxembourg">Luxembourg</option>
-                        <option value="Malta">Malta</option>
-                        <option value="Netherlands">Netherlands</option>
-                        <option value="Norway">Norway</option>
-                        <option value="Poland">Poland</option>
-                        <option value="Portugal">Portugal</option>
-                        <option value="Romania">Romania</option>
-                        <option value="Spain">Spain</option>
-                        <option value="Sweden">Sweden</option>
-                        <option value="Switzerland">Switzerland</option>
-                    </select>
                 </div>
             </div>
 
             <div class="form-row">
                 <div class="form-group">
-                    <label>Days</label>
-                    <div class="checkbox-group" id="days-group">
+                    <label class="group-label">Days</label>
+                    <div class="day-chips" id="days-group">
                         <label><input type="checkbox" value="mon"><span>Mon</span></label>
                         <label><input type="checkbox" value="tue"><span>Tue</span></label>
                         <label><input type="checkbox" value="wed"><span>Wed</span></label>
@@ -407,12 +423,40 @@
 
             <div class="form-row">
                 <div class="form-group">
-                    <label>Time of Day</label>
-                    <div class="checkbox-group" id="times-group">
-                        <label><input type="checkbox" value="morning"><span>Morning (07:00-12:00)</span></label>
-                        <label><input type="checkbox" value="afternoon"><span>Afternoon (12:00-17:00)</span></label>
-                        <label><input type="checkbox" value="evening"><span>Evening (17:00-22:00)</span></label>
-                        <label><input type="checkbox" value="overnight"><span>Overnight (22:00-07:00)</span></label>
+                    <label class="group-label">When</label>
+                    <div class="time-slots" id="times-group">
+                        <label class="time-slot">
+                            <input type="checkbox" value="morning">
+                            <div class="slot-card">
+                                <span class="slot-icon">&#9788;</span>
+                                <span class="slot-label">Morning</span>
+                                <span class="slot-range">7am - 12pm</span>
+                            </div>
+                        </label>
+                        <label class="time-slot">
+                            <input type="checkbox" value="afternoon">
+                            <div class="slot-card">
+                                <span class="slot-icon">&#9728;</span>
+                                <span class="slot-label">Afternoon</span>
+                                <span class="slot-range">12pm - 5pm</span>
+                            </div>
+                        </label>
+                        <label class="time-slot">
+                            <input type="checkbox" value="evening">
+                            <div class="slot-card">
+                                <span class="slot-icon">&#9790;</span>
+                                <span class="slot-label">Evening</span>
+                                <span class="slot-range">5pm - 10pm</span>
+                            </div>
+                        </label>
+                        <label class="time-slot">
+                            <input type="checkbox" value="overnight">
+                            <div class="slot-card">
+                                <span class="slot-icon">&#10035;</span>
+                                <span class="slot-label">Late Night</span>
+                                <span class="slot-range">10pm - 7am</span>
+                            </div>
+                        </label>
                     </div>
                 </div>
             </div>
@@ -446,7 +490,7 @@
 
         function resetForm() {
             document.getElementById("location").value = "";
-            document.querySelectorAll('.checkbox-group input[type="checkbox"]').forEach(cb => cb.checked = false);
+            document.querySelectorAll('#days-group input[type="checkbox"], #times-group input[type="checkbox"]').forEach(cb => cb.checked = false);
             document.getElementById("results-area").innerHTML = "";
             currentPage = 1;
         }
@@ -456,7 +500,6 @@
             currentPage = page;
 
             const location = document.getElementById("location").value.trim();
-            const country = document.getElementById("country").value;
             const days = getSelectedValues("days-group");
             const times = getSelectedValues("times-group");
 
@@ -466,12 +509,12 @@
                 return;
             }
 
-            lastSearchParams = { location, country, days, times, page };
+            lastSearchParams = { location, days, times, page };
 
             const params = new URLSearchParams();
             params.set("form_type", currentFormType);
             if (location) params.set("location", location);
-            params.set("country", country);
+            params.set("country", "United Kingdom");
             if (days.length) params.set("days", days.join(","));
             if (times.length) params.set("times", times.join(","));
             params.set("page", page);
@@ -538,7 +581,7 @@
                 html += `<div class="${cardClass}">`;
 
                 // Day column
-                html += `<div class="meeting-day">${m.day || "—"}</div>`;
+                html += `<div class="meeting-day">${m.day || "\u2014"}</div>`;
 
                 // Info column
                 html += `<div class="meeting-info">`;
