@@ -47,8 +47,8 @@ app.get("/api/search", async (req, res) => {
 
     res.json(result);
   } catch (err) {
-    console.error("Search error:", err);
-    res.status(500).json({ error: "Internal server error" });
+    console.error("Search error:", err.message, err.stack);
+    res.status(500).json({ error: `Search failed: ${err.message}` });
   }
 });
 

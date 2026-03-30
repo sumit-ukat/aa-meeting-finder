@@ -30,13 +30,16 @@ async function getBrowser() {
         "--disable-blink-features=AutomationControlled",
         "--disable-dev-shm-usage",
         "--disable-gpu",
-        "--single-process",
+        "--disable-software-rasterizer",
+        "--no-zygote",
       ],
     };
     if (process.env.PUPPETEER_EXECUTABLE_PATH) {
       launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
     }
+    console.log("[Scraper] Launching browser...");
     browserInstance = await puppeteer.launch(launchOptions);
+    console.log("[Scraper] Browser launched successfully");
   }
   return browserInstance;
 }
@@ -117,57 +120,88 @@ function buildSearchUrl(formType, options = {}) {
 /**
  * Fetch a page using Puppeteer to handle Cloudflare challenges.
  */
-async function fetchPage(url, retries = 2) {
+async function fetchPage(url, retries = 3) {
   const browser = await getBrowser();
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     let page = null;
     try {
+      console.log(`[Scraper] Attempt ${attempt + 1}/${retries + 1} for ${url}`);
       page = await browser.newPage();
       await page.setUserAgent(
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
       );
       await page.setExtraHTTPHeaders({
         "Accept-Language": "en-GB,en;q=0.9",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
       });
 
-      await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
+      // Set viewport to look like a real browser
+      await page.setViewport({ width: 1920, height: 1080 });
+
+      const response = await page.goto(url, { waitUntil: "networkidle2", timeout: 45000 });
+      console.log(`[Scraper] Page loaded with status: ${response ? response.status() : 'unknown'}`);
 
       // Wait for Cloudflare challenge to resolve if present
-      const isChallenge = await page.evaluate(() =>
-        document.title.includes("Just a moment")
-      );
-      if (isChallenge) {
-        // Wait for challenge to pass (up to 15 seconds)
+      const title = await page.title();
+      console.log(`[Scraper] Page title: "${title}"`);
+
+      if (title.includes("Just a moment")) {
+        console.log("[Scraper] Cloudflare challenge detected, waiting...");
         await page.waitForFunction(
           () => !document.title.includes("Just a moment"),
-          { timeout: 15000 }
+          { timeout: 20000 }
         );
-        // Wait a bit more for page to fully load
+        console.log("[Scraper] Cloudflare challenge passed");
+        // Wait for page content to load after challenge
+        await page.waitForSelector(".meeting-card, .results-section, .meeting-form", {
+          timeout: 15000,
+        }).catch(() => {
+          console.log("[Scraper] No meeting selectors found after challenge");
+        });
+      } else {
+        // Not a challenge page, wait for content
         await page.waitForSelector(".meeting-card, .results-section, .meeting-form", {
           timeout: 10000,
-        }).catch(() => {});
+        }).catch(() => {
+          console.log("[Scraper] No meeting selectors found on page");
+        });
       }
 
       const html = await page.content();
+      const htmlLength = html.length;
       await page.close();
+      page = null;
+
+      console.log(`[Scraper] Got HTML (${htmlLength} chars)`);
 
       // Check if we actually got content
       if (html.includes("meeting-card") || html.includes("results-section") || html.includes("meeting-form")) {
+        console.log("[Scraper] Found meeting content in HTML");
         return html;
       }
 
-      // If no meeting content, might still be on challenge page
+      console.log(`[Scraper] No meeting content found. Title was: "${title}"`);
+      // Log a snippet to help debug
+      const snippet = html.substring(0, 500).replace(/\s+/g, " ");
+      console.log(`[Scraper] HTML snippet: ${snippet}`);
+
       if (attempt < retries) {
-        await new Promise((r) => setTimeout(r, 2000));
+        const delay = 3000 * (attempt + 1);
+        console.log(`[Scraper] Retrying in ${delay}ms...`);
+        await new Promise((r) => setTimeout(r, delay));
       }
     } catch (e) {
+      console.error(`[Scraper] Error on attempt ${attempt + 1}: ${e.message}`);
       if (page) await page.close().catch(() => {});
       if (attempt < retries) {
-        await new Promise((r) => setTimeout(r, 2000));
+        const delay = 3000 * (attempt + 1);
+        console.log(`[Scraper] Retrying in ${delay}ms...`);
+        await new Promise((r) => setTimeout(r, delay));
       }
     }
   }
+  console.error("[Scraper] All attempts failed");
   return null;
 }
 
