@@ -1,0 +1,15 @@
+{
+  "name": "aa-meeting-finder",
+  "version": "1.0.0",
+  "description": "Custom connector that scrapes AA meetings from alcoholics-anonymous.org.uk",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "express": "^4.21.0",
+    "node-fetch": "^2.7.0",
+    "puppeteer": "^24.40.0"
+  }
+}
