@@ -10,6 +10,15 @@ const { searchMeetings, getMeetingDetail, closeBrowser, VALID_DAYS, VALID_TIMES 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Enable CORS for embedding on external sites (e.g. UKAT)
+app.use("/api", (req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type");
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+});
+
 // Serve static frontend
 app.use(express.static(path.join(__dirname, "static")));
 

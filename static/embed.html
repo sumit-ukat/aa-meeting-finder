@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AA Meeting Finder - Embeddable Widget</title>
+</head>
+<body>
+    <p style="max-width:900px;margin:2rem auto;padding:0 1rem;font-family:sans-serif;color:#666;font-size:0.9rem;">
+        Below is the embeddable AA Meeting Finder widget. Copy the <code>&lt;div id="aa-meeting-finder"&gt;</code> and the <code>&lt;script&gt;</code> tag into any page to embed it.
+    </p>
+
+    <!-- ========== COPY EVERYTHING BELOW THIS LINE ========== -->
+
+    <div id="aa-meeting-finder"></div>
+
+    <script>
+    (function() {
+        const API_BASE = "https://aa-meeting-finder-production.up.railway.app";
+        const ROOT = document.getElementById("aa-meeting-finder");
+
+        // State
+        let formType = "in_person";
+        let currentPage = 1;
+
+        // Inject scoped styles
+        const style = document.createElement("style");
+        style.textContent = `
+            #aa-meeting-finder {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                max-width: 960px;
+                margin: 0 auto;
+                color: #2c3e50;
+                line-height: 1.6;
+            }
+            #aa-meeting-finder *, #aa-meeting-finder *::before, #aa-meeting-finder *::after {
+                box-sizing: border-box;
+            }
+
+            .aamf-panel {
+                background: #fff;
+                border-radius: 12px;
+                padding: 1.25rem 1.5rem;
+                box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+                margin-bottom: 1.25rem;
+            }
+
+            /* Type toggle */
+            .aamf-toggle {
+                display: inline-flex;
+                border-radius: 8px;
+                overflow: hidden;
+                border: 1.5px solid #dce1e6;
+                margin-bottom: 1rem;
+            }
+            .aamf-toggle button {
+                padding: 0.5rem 1.4rem;
+                border: none;
+                background: #fff;
+                font-size: 0.88rem;
+                font-weight: 500;
+                cursor: pointer;
+                color: #7f8c8d;
+                transition: all 0.2s;
+            }
+            .aamf-toggle button.active {
+                background: #1a5276;
+                color: #fff;
+            }
+            .aamf-toggle button:hover:not(.active) { background: #eaf2f8; }
+
+            /* Location */
+            .aamf-loc { margin-bottom: 1rem; display: none; }
+            .aamf-loc.show { display: block; }
+            .aamf-loc label {
+                display: block;
+                font-weight: 600;
+                font-size: 0.82rem;
+                margin-bottom: 0.35rem;
+            }
+            .aamf-loc input {
+                width: 100%;
+                padding: 0.55rem 0.75rem;
+                border: 1.5px solid #dce1e6;
+                border-radius: 8px;
+                font-size: 0.92rem;
+                outline: none;
+                transition: border-color 0.2s;
+            }
+            .aamf-loc input:focus { border-color: #2980b9; }
+
+            /* Filters row */
+            .aamf-filters { display: flex; flex-wrap: wrap; gap: 1.25rem; margin-bottom: 1rem; }
+            .aamf-filter-group { flex: 1; min-width: 200px; }
+            .aamf-filter-group > span {
+                display: block;
+                font-weight: 600;
+                font-size: 0.82rem;
+                margin-bottom: 0.4rem;
+            }
+
+            /* Day chips */
+            .aamf-days { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+            .aamf-days label {
+                display: flex; align-items: center; gap: 0.25rem;
+                padding: 0.3rem 0.6rem;
+                border: 1.5px solid #dce1e6;
+                border-radius: 6px;
+                font-size: 0.82rem;
+                cursor: pointer;
+                user-select: none;
+                transition: all 0.15s;
+            }
+            .aamf-days label:hover { border-color: #2980b9; }
+            .aamf-days input { accent-color: #1a5276; }
+            .aamf-days input:checked + span { color: #1a5276; font-weight: 600; }
+
+            /* Time cards */
+            .aamf-times { display: grid; grid-template-columns: repeat(4,1fr); gap: 0.5rem; }
+            .aamf-time-card {
+                position: relative; cursor: pointer; user-select: none;
+            }
+            .aamf-time-card input { position: absolute; opacity: 0; width: 0; height: 0; }
+            .aamf-time-card .tc {
+                display: flex; flex-direction: column; align-items: center; gap: 0.2rem;
+                padding: 0.6rem 0.3rem;
+                border: 1.5px solid #dce1e6;
+                border-radius: 10px;
+                background: #fff;
+                transition: all 0.2s;
+            }
+            .aamf-time-card:hover .tc { border-color: #2980b9; background: #f8fbff; }
+            .aamf-time-card input:checked + .tc {
+                border-color: #1a5276; background: #eaf2f8; box-shadow: 0 0 0 1px #1a5276;
+            }
+            .tc-icon { font-size: 1.3rem; line-height: 1; }
+            .tc-label { font-size: 0.78rem; font-weight: 600; color: #2c3e50; }
+            .tc-range { font-size: 0.68rem; color: #7f8c8d; }
+
+            /* Buttons */
+            .aamf-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+            .aamf-search {
+                background: #e67e22; color: #fff; border: none;
+                padding: 0.6rem 1.8rem; font-size: 0.95rem; font-weight: 600;
+                border-radius: 8px; cursor: pointer; transition: background 0.2s;
+            }
+            .aamf-search:hover { background: #d35400; }
+            .aamf-search:disabled { background: #bdc3c7; cursor: not-allowed; }
+            .aamf-clear {
+                background: none; border: 1.5px solid #dce1e6;
+                padding: 0.55rem 1rem; border-radius: 8px;
+                cursor: pointer; font-size: 0.88rem; color: #7f8c8d;
+            }
+            .aamf-clear:hover { border-color: #bdc3c7; }
+
+            /* Results */
+            .aamf-count { font-size: 0.95rem; font-weight: 600; margin-bottom: 0.75rem; }
+            .aamf-count b { color: #2980b9; }
+            .aamf-list { display: flex; flex-direction: column; gap: 0.6rem; }
+
+            .aamf-card {
+                background: #fff; border-radius: 10px; padding: 0.9rem 1.1rem;
+                box-shadow: 0 1px 5px rgba(0,0,0,0.04);
+                border-left: 4px solid #2980b9;
+                display: grid; grid-template-columns: 90px 1fr auto; gap: 0.8rem;
+                align-items: start; transition: box-shadow 0.2s;
+            }
+            .aamf-card:hover { box-shadow: 0 3px 12px rgba(0,0,0,0.09); }
+            .aamf-card.online { border-left-color: #27ae60; }
+
+            .aamf-card-day {
+                font-weight: 700; font-size: 0.85rem;
+                color: #1a5276; text-transform: uppercase; padding-top: 0.1rem;
+            }
+            .aamf-card.online .aamf-card-day { color: #27ae60; }
+
+            .aamf-card-info h4 {
+                font-size: 0.95rem; font-weight: 600; margin: 0 0 0.2rem;
+            }
+            .aamf-card-info h4 a { color: #2c3e50; text-decoration: none; }
+            .aamf-card-info h4 a:hover { color: #2980b9; }
+            .aamf-card-loc { font-size: 0.82rem; color: #7f8c8d; margin-bottom: 0.3rem; }
+            .aamf-card-meta { display: flex; flex-wrap: wrap; gap: 0.6rem; font-size: 0.8rem; }
+            .aamf-card-meta span { color: #7f8c8d; }
+            .aamf-card-meta strong { color: #2c3e50; }
+            .aamf-tags { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.35rem; }
+            .aamf-tag {
+                background: #eaf2f8; color: #1a5276;
+                padding: 0.12rem 0.45rem; border-radius: 4px;
+                font-size: 0.72rem; font-weight: 500;
+            }
+            .aamf-tag.online-tag { background: #e8f8f0; color: #27ae60; }
+
+            .aamf-card-side { text-align: right; font-size: 0.8rem; white-space: nowrap; }
+            .aamf-card-side .pc { font-weight: 700; color: #1a5276; font-size: 0.85rem; }
+            .aamf-card-side .dist { color: #7f8c8d; margin-top: 0.15rem; }
+            .aamf-card-side a {
+                display: inline-block; margin-top: 0.3rem;
+                font-size: 0.78rem; color: #2980b9; text-decoration: none;
+            }
+            .aamf-card-side a:hover { text-decoration: underline; }
+
+            /* Pagination */
+            .aamf-pag { display: flex; justify-content: center; gap: 0.35rem; margin-top: 1.25rem; flex-wrap: wrap; }
+            .aamf-pag button {
+                padding: 0.4rem 0.75rem; border: 1.5px solid #dce1e6;
+                border-radius: 6px; background: #fff; cursor: pointer;
+                font-size: 0.85rem; transition: all 0.2s;
+            }
+            .aamf-pag button.active { background: #1a5276; color: #fff; border-color: #1a5276; }
+            .aamf-pag button:hover:not(.active) { border-color: #2980b9; }
+
+            /* Loading / Error */
+            .aamf-loading { text-align: center; padding: 2.5rem; color: #7f8c8d; }
+            .aamf-spinner {
+                width: 32px; height: 32px;
+                border: 3px solid #dce1e6; border-top-color: #2980b9;
+                border-radius: 50%; animation: aamf-spin 0.8s linear infinite;
+                margin: 0 auto 0.8rem;
+            }
+            @keyframes aamf-spin { to { transform: rotate(360deg); } }
+            .aamf-error {
+                background: #fdecea; color: #c0392b;
+                padding: 0.7rem 1rem; border-radius: 8px;
+                font-size: 0.88rem; margin-bottom: 0.75rem;
+            }
+
+            @media (max-width: 640px) {
+                .aamf-card { grid-template-columns: 1fr; gap: 0.4rem; }
+                .aamf-card-side { text-align: left; }
+                .aamf-times { grid-template-columns: repeat(2,1fr); }
+                .aamf-filters { flex-direction: column; gap: 0.75rem; }
+            }
+        `;
+        document.head.appendChild(style);
+
+        // Build UI
+        ROOT.innerHTML = `
+            <div class="aamf-panel">
+                <div class="aamf-toggle">
+                    <button id="aamf-btn-ip" class="active">In Person</button>
+                    <button id="aamf-btn-ol">Online Only</button>
+                </div>
+                <div class="aamf-loc show" id="aamf-loc">
+                    <label>Town, City, or Postcode</label>
+                    <input type="text" id="aamf-input" placeholder="e.g. Bedford, MK40 1SQ, London..." />
+                </div>
+                <div class="aamf-filters">
+                    <div class="aamf-filter-group">
+                        <span>Days</span>
+                        <div class="aamf-days" id="aamf-days">
+                            <label><input type="checkbox" value="mon"><span>Mon</span></label>
+                            <label><input type="checkbox" value="tue"><span>Tue</span></label>
+                            <label><input type="checkbox" value="wed"><span>Wed</span></label>
+                            <label><input type="checkbox" value="thu"><span>Thu</span></label>
+                            <label><input type="checkbox" value="fri"><span>Fri</span></label>
+                            <label><input type="checkbox" value="sat"><span>Sat</span></label>
+                            <label><input type="checkbox" value="sun"><span>Sun</span></label>
+                        </div>
+                    </div>
+                    <div class="aamf-filter-group">
+                        <span>When</span>
+                        <div class="aamf-times" id="aamf-times">
+                            <label class="aamf-time-card"><input type="checkbox" value="morning"><div class="tc"><span class="tc-icon">&#9788;</span><span class="tc-label">Morning</span><span class="tc-range">7am - 12pm</span></div></label>
+                            <label class="aamf-time-card"><input type="checkbox" value="afternoon"><div class="tc"><span class="tc-icon">&#9728;</span><span class="tc-label">Afternoon</span><span class="tc-range">12pm - 5pm</span></div></label>
+                            <label class="aamf-time-card"><input type="checkbox" value="evening"><div class="tc"><span class="tc-icon">&#9790;</span><span class="tc-label">Evening</span><span class="tc-range">5pm - 10pm</span></div></label>
+                            <label class="aamf-time-card"><input type="checkbox" value="overnight"><div class="tc"><span class="tc-icon">&#10035;</span><span class="tc-label">Late Night</span><span class="tc-range">10pm - 7am</span></div></label>
+                        </div>
+                    </div>
+                </div>
+                <div class="aamf-actions">
+                    <button class="aamf-search" id="aamf-go">Find Meetings</button>
+                    <button class="aamf-clear" id="aamf-reset">Clear Filters</button>
+                </div>
+            </div>
+            <div id="aamf-results"></div>
+        `;
+
+        // Elements
+        const btnIp = document.getElementById("aamf-btn-ip");
+        const btnOl = document.getElementById("aamf-btn-ol");
+        const locWrap = document.getElementById("aamf-loc");
+        const locInput = document.getElementById("aamf-input");
+        const goBtn = document.getElementById("aamf-go");
+        const resetBtn = document.getElementById("aamf-reset");
+        const resultsEl = document.getElementById("aamf-results");
+
+        function setType(t) {
+            formType = t;
+            btnIp.classList.toggle("active", t === "in_person");
+            btnOl.classList.toggle("active", t === "online");
+            locWrap.classList.toggle("show", t === "in_person");
+        }
+        btnIp.onclick = () => setType("in_person");
+        btnOl.onclick = () => setType("online");
+
+        function getChecked(id) {
+            return Array.from(document.querySelectorAll(`#${id} input:checked`)).map(c => c.value);
+        }
+
+        resetBtn.onclick = () => {
+            locInput.value = "";
+            ROOT.querySelectorAll('input[type="checkbox"]').forEach(c => c.checked = false);
+            resultsEl.innerHTML = "";
+            currentPage = 1;
+        };
+
+        locInput.addEventListener("keydown", e => { if (e.key === "Enter") search(); });
+        goBtn.onclick = () => search();
+
+        function search(page) {
+            page = page || 1;
+            currentPage = page;
+            const loc = locInput.value.trim();
+            if (formType === "in_person" && !loc) {
+                resultsEl.innerHTML = '<div class="aamf-error">Please enter a town, city, or postcode.</div>';
+                return;
+            }
+            const p = new URLSearchParams();
+            p.set("form_type", formType);
+            if (loc) p.set("location", loc);
+            p.set("country", "United Kingdom");
+            const days = getChecked("aamf-days");
+            const times = getChecked("aamf-times");
+            if (days.length) p.set("days", days.join(","));
+            if (times.length) p.set("times", times.join(","));
+            p.set("page", page);
+
+            goBtn.disabled = true;
+            goBtn.textContent = "Searching...";
+            resultsEl.innerHTML = '<div class="aamf-loading"><div class="aamf-spinner"></div><p>Searching for meetings...</p></div>';
+
+            fetch(`${API_BASE}/api/search?${p.toString()}`)
+                .then(r => r.json())
+                .then(data => {
+                    goBtn.disabled = false;
+                    goBtn.textContent = "Find Meetings";
+                    render(data);
+                })
+                .catch(err => {
+                    goBtn.disabled = false;
+                    goBtn.textContent = "Find Meetings";
+                    resultsEl.innerHTML = `<div class="aamf-error">Error: ${err.message}. Please try again.</div>`;
+                });
+        }
+
+        // Expose search globally for pagination clicks
+        window.__aamf_search = search;
+
+        function render(data) {
+            if (data.error) { resultsEl.innerHTML = `<div class="aamf-error">${data.error}</div>`; return; }
+            if (!data.meetings || !data.meetings.length) {
+                resultsEl.innerHTML = '<div class="aamf-loading"><p style="font-size:1.3rem;margin-bottom:0.3rem">No meetings found</p><p>Try adjusting your filters or location.</p></div>';
+                return;
+            }
+
+            const label = formType === "in_person" ? "in-person" : "online";
+            let h = `<div class="aamf-count">Found <b>${data.total_results}</b> ${label} meetings</div><div class="aamf-list">`;
+
+            for (const m of data.meetings) {
+                const isOl = m.type === "online";
+                h += `<div class="aamf-card${isOl ? ' online' : ''}">`;
+                h += `<div class="aamf-card-day">${m.day || "\u2014"}</div>`;
+                h += `<div class="aamf-card-info">`;
+                h += m.detail_url
+                    ? `<h4><a href="${m.detail_url}" target="_blank" rel="noopener">${m.name || "Meeting"}</a></h4>`
+                    : `<h4>${m.name || "Meeting"}</h4>`;
+                if (m.location) h += `<div class="aamf-card-loc">${m.location}</div>`;
+                h += `<div class="aamf-card-meta">`;
+                if (m.time) h += `<span>Time: <strong>${m.time}</strong></span>`;
+                if (m.duration) h += `<span>Duration: <strong>${m.duration}</strong></span>`;
+                if (isOl) h += `<span class="aamf-tag online-tag">Online</span>`;
+                h += `</div>`;
+                if (m.accessibility && m.accessibility.length) {
+                    h += `<div class="aamf-tags">${m.accessibility.map(t => `<span class="aamf-tag">${t}</span>`).join("")}</div>`;
+                }
+                h += `</div>`;
+                h += `<div class="aamf-card-side">`;
+                if (m.postcode) h += `<div class="pc">${m.postcode}</div>`;
+                if (m.distance) h += `<div class="dist">${m.distance}</div>`;
+                if (m.directions_url) h += `<a href="${m.directions_url}" target="_blank" rel="noopener">Get Directions</a>`;
+                h += `</div></div>`;
+            }
+            h += `</div>`;
+
+            if (data.max_page > 1) {
+                h += `<div class="aamf-pag">`;
+                if (currentPage > 1) h += `<button onclick="__aamf_search(${currentPage - 1})">Prev</button>`;
+                for (let i = 1; i <= data.max_page; i++) {
+                    h += `<button class="${i === currentPage ? 'active' : ''}" onclick="__aamf_search(${i})">${i}</button>`;
+                }
+                if (currentPage < data.max_page) h += `<button onclick="__aamf_search(${currentPage + 1})">Next</button>`;
+                h += `</div>`;
+            }
+
+            resultsEl.innerHTML = h;
+        }
+    })();
+    </script>
+
+    <!-- ========== COPY EVERYTHING ABOVE THIS LINE ========== -->
+
+</body>
+</html>
