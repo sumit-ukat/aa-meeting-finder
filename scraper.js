@@ -22,14 +22,20 @@ let browserInstance = null;
 
 async function getBrowser() {
   if (!browserInstance || !browserInstance.connected) {
-    browserInstance = await puppeteer.launch({
+    const launchOptions = {
       headless: "new",
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",
         "--disable-blink-features=AutomationControlled",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
       ],
-    });
+    };
+    if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+      launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+    }
+    browserInstance = await puppeteer.launch(launchOptions);
   }
   return browserInstance;
 }
