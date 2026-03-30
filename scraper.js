@@ -30,6 +30,7 @@ async function getBrowser() {
         "--disable-blink-features=AutomationControlled",
         "--disable-dev-shm-usage",
         "--disable-gpu",
+        "--single-process",
       ],
     };
     if (process.env.PUPPETEER_EXECUTABLE_PATH) {
