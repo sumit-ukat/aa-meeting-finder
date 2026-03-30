@@ -13,8 +13,18 @@ const PORT = process.env.PORT || 5000;
 // Serve static frontend
 app.use(express.static(path.join(__dirname, "static")));
 
-// API: Search meetings
+// API: Search meetings (with 60s timeout)
 app.get("/api/search", async (req, res) => {
+  // Set a 60-second timeout for the response
+  req.setTimeout(65000);
+  res.setTimeout(65000);
+
+  const timeout = setTimeout(() => {
+    if (!res.headersSent) {
+      res.status(504).json({ error: "Request timed out. The AA website may be slow or blocking requests." });
+    }
+  }, 60000);
+
   try {
     const formType = req.query.form_type || "in_person";
     const location = (req.query.location || "").trim();
@@ -25,6 +35,7 @@ app.get("/api/search", async (req, res) => {
     const page = parseInt(req.query.page, 10) || 1;
 
     if (formType === "in_person" && !location) {
+      clearTimeout(timeout);
       return res.status(400).json({ error: "Location is required for in-person meetings" });
     }
 
@@ -45,10 +56,16 @@ app.get("/api/search", async (req, res) => {
       page,
     });
 
-    res.json(result);
+    clearTimeout(timeout);
+    if (!res.headersSent) {
+      res.json(result);
+    }
   } catch (err) {
+    clearTimeout(timeout);
     console.error("Search error:", err.message, err.stack);
-    res.status(500).json({ error: `Search failed: ${err.message}` });
+    if (!res.headersSent) {
+      res.status(500).json({ error: `Search failed: ${err.message}` });
+    }
   }
 });
 
