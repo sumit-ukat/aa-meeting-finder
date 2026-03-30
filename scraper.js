@@ -1,7 +1,7 @@
 /**
  * AA Meeting Scraper
  * Scrapes meeting data from alcoholics-anonymous.org.uk
- * Uses dual approach: lightweight fetch first, Puppeteer fallback.
+ * Uses FlareSolverr to bypass Cloudflare protection.
  * Supports both in-person and online meetings with filtering by day, time, and location.
  */
 
@@ -9,119 +9,13 @@ const cheerio = require("cheerio");
 const fetch = require("node-fetch");
 
 const BASE_URL = "https://www.alcoholics-anonymous.org.uk/find-a-meeting/";
+const FLARESOLVERR_URL = process.env.FLARESOLVERR_URL || "http://localhost:8191/v1";
 
 const VALID_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const VALID_TIMES = ["morning", "afternoon", "evening", "overnight"];
 const DAY_NAMES = [
   "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
 ];
-
-// Shared browser instance for Puppeteer fallback
-let browserInstance = null;
-
-/**
- * Try fetching a page with plain HTTP first (fastest, works if no CF challenge).
- */
-async function fetchWithHttp(url) {
-  try {
-    console.log(`[Scraper] Trying HTTP fetch for: ${url}`);
-    const resp = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-        "Accept-Language": "en-GB,en-US;q=0.9,en;q=0.8",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Cache-Control": "no-cache",
-        "Sec-Ch-Ua": '"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"',
-        "Sec-Ch-Ua-Mobile": "?0",
-        "Sec-Ch-Ua-Platform": '"Windows"',
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "none",
-        "Sec-Fetch-User": "?1",
-        "Upgrade-Insecure-Requests": "1",
-      },
-      timeout: 20000,
-      redirect: "follow",
-    });
-
-    console.log(`[Scraper] HTTP response status: ${resp.status}`);
-
-    if (resp.status === 403 || resp.status === 503) {
-      console.log("[Scraper] HTTP fetch blocked (likely Cloudflare), will try Puppeteer");
-      return null;
-    }
-
-    const html = await resp.text();
-    console.log(`[Scraper] HTTP fetch got ${html.length} chars`);
-
-    // Check if it's a Cloudflare challenge page
-    if (html.includes("Just a moment") || html.includes("cf-browser-verification") || html.includes("challenge-platform")) {
-      console.log("[Scraper] Got Cloudflare challenge page via HTTP, will try Puppeteer");
-      return null;
-    }
-
-    // Check if we got actual meeting content
-    if (html.includes("meeting-card") || html.includes("results-section") || html.includes("meeting-form")) {
-      console.log("[Scraper] HTTP fetch succeeded with meeting content");
-      return html;
-    }
-
-    console.log("[Scraper] HTTP response has no meeting content");
-    const snippet = html.substring(0, 300).replace(/\s+/g, " ");
-    console.log(`[Scraper] Snippet: ${snippet}`);
-    return null;
-  } catch (e) {
-    console.log(`[Scraper] HTTP fetch error: ${e.message}`);
-    return null;
-  }
-}
-
-/**
- * Launch Puppeteer with stealth settings.
- */
-async function getBrowser() {
-  if (!browserInstance || !browserInstance.connected) {
-    let puppeteer;
-    try {
-      puppeteer = require("puppeteer-extra");
-      const StealthPlugin = require("puppeteer-extra-plugin-stealth");
-      puppeteer.use(StealthPlugin());
-      console.log("[Scraper] Using puppeteer-extra with stealth plugin");
-    } catch (e) {
-      puppeteer = require("puppeteer");
-      console.log("[Scraper] Using plain puppeteer (stealth plugin not available)");
-    }
-
-    const launchOptions = {
-      headless: "new",
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-blink-features=AutomationControlled",
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-        "--window-size=1920,1080",
-        "--lang=en-GB,en",
-      ],
-    };
-    if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-      launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
-      console.log(`[Scraper] Using Chrome at: ${process.env.PUPPETEER_EXECUTABLE_PATH}`);
-    }
-    console.log("[Scraper] Launching browser...");
-    browserInstance = await puppeteer.launch(launchOptions);
-    console.log("[Scraper] Browser launched successfully");
-  }
-  return browserInstance;
-}
-
-async function closeBrowser() {
-  if (browserInstance) {
-    await browserInstance.close();
-    browserInstance = null;
-  }
-}
 
 /**
  * Geocode a location string to lat/lng using Nominatim.
@@ -193,110 +87,56 @@ function buildSearchUrl(formType, options = {}) {
 }
 
 /**
- * Fetch a page using Puppeteer (fallback for when HTTP fetch is blocked by Cloudflare).
+ * Fetch a page using FlareSolverr to handle Cloudflare challenges.
  */
-async function fetchWithPuppeteer(url, retries = 2) {
-  const browser = await getBrowser();
-
+async function fetchPage(url, retries = 2) {
   for (let attempt = 0; attempt <= retries; attempt++) {
-    let page = null;
     try {
-      console.log(`[Scraper] Puppeteer attempt ${attempt + 1}/${retries + 1}`);
-      page = await browser.newPage();
-      await page.setUserAgent(
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
-      );
-      await page.setExtraHTTPHeaders({
-        "Accept-Language": "en-GB,en;q=0.9",
-      });
-      await page.setViewport({ width: 1920, height: 1080 });
+      console.log(`[Scraper] FlareSolverr request attempt ${attempt + 1}/${retries + 1} for ${url}`);
 
-      // Override navigator.webdriver
-      await page.evaluateOnNewDocument(() => {
-        Object.defineProperty(navigator, "webdriver", { get: () => false });
-        // Override plugins
-        Object.defineProperty(navigator, "plugins", {
-          get: () => [1, 2, 3, 4, 5],
-        });
-        // Override languages
-        Object.defineProperty(navigator, "languages", {
-          get: () => ["en-GB", "en-US", "en"],
-        });
-        // Override permissions
-        const originalQuery = window.navigator.permissions.query;
-        window.navigator.permissions.query = (parameters) =>
-          parameters.name === "notifications"
-            ? Promise.resolve({ state: Notification.permission })
-            : originalQuery(parameters);
+      const resp = await fetch(FLARESOLVERR_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cmd: "request.get",
+          url: url,
+          maxTimeout: 45000,
+        }),
       });
 
-      const response = await page.goto(url, { waitUntil: "networkidle2", timeout: 45000 });
-      console.log(`[Scraper] Puppeteer loaded with status: ${response ? response.status() : "unknown"}`);
+      const data = await resp.json();
 
-      const title = await page.title();
-      console.log(`[Scraper] Page title: "${title}"`);
+      if (data.status === "ok" && data.solution) {
+        const html = data.solution.response;
+        console.log(`[Scraper] FlareSolverr got HTML (${html.length} chars), status: ${data.solution.status}`);
 
-      if (title.includes("Just a moment")) {
-        console.log("[Scraper] Cloudflare challenge detected, waiting up to 25s...");
-        await page.waitForFunction(
-          () => !document.title.includes("Just a moment"),
-          { timeout: 25000 }
-        );
-        console.log("[Scraper] Cloudflare challenge passed");
-        await page.waitForSelector(".meeting-card, .results-section, .meeting-form", {
-          timeout: 15000,
-        }).catch(() => {
-          console.log("[Scraper] No meeting selectors found after challenge");
-        });
+        if (html.includes("meeting-card") || html.includes("results-section") || html.includes("meeting-form")) {
+          console.log("[Scraper] Found meeting content in response");
+          return html;
+        }
+
+        console.log("[Scraper] No meeting content in FlareSolverr response");
+        const snippet = html.substring(0, 300).replace(/\s+/g, " ");
+        console.log(`[Scraper] Snippet: ${snippet}`);
       } else {
-        await page.waitForSelector(".meeting-card, .results-section, .meeting-form", {
-          timeout: 10000,
-        }).catch(() => {
-          console.log("[Scraper] No meeting selectors found on page");
-        });
+        console.log(`[Scraper] FlareSolverr returned status: ${data.status}, message: ${data.message || "none"}`);
       }
 
-      const html = await page.content();
-      await page.close();
-      page = null;
-
-      console.log(`[Scraper] Puppeteer got HTML (${html.length} chars)`);
-
-      if (html.includes("meeting-card") || html.includes("results-section") || html.includes("meeting-form")) {
-        console.log("[Scraper] Puppeteer found meeting content");
-        return html;
-      }
-
-      console.log("[Scraper] Puppeteer: no meeting content found");
       if (attempt < retries) {
         const delay = 3000 * (attempt + 1);
         console.log(`[Scraper] Retrying in ${delay}ms...`);
         await new Promise((r) => setTimeout(r, delay));
       }
     } catch (e) {
-      console.error(`[Scraper] Puppeteer error: ${e.message}`);
-      if (page) await page.close().catch(() => {});
+      console.error(`[Scraper] FlareSolverr error on attempt ${attempt + 1}: ${e.message}`);
       if (attempt < retries) {
         const delay = 3000 * (attempt + 1);
         await new Promise((r) => setTimeout(r, delay));
       }
     }
   }
+  console.error("[Scraper] All fetch attempts failed");
   return null;
-}
-
-/**
- * Fetch a page - tries HTTP first, falls back to Puppeteer.
- */
-async function fetchPage(url) {
-  // Try lightweight HTTP fetch first
-  let html = await fetchWithHttp(url);
-  if (html) return html;
-
-  // Fall back to Puppeteer
-  console.log("[Scraper] Falling back to Puppeteer...");
-  html = await fetchWithPuppeteer(url);
-  return html;
 }
 
 /**
@@ -333,14 +173,14 @@ function parseInPersonCard($, card) {
     if (nameH.length) meeting.name = nameH.text().trim();
   }
 
-  // Location - address is in a <p> tag inside .subsection
+  // Location - address in <p> tag
   const addressEl = $card.find(".meeting-card__text p, .subsection p").first();
   if (addressEl.length) {
     meeting.location = addressEl.text().trim();
   }
 
   // Details from <dl> definition list
-  $card.find(".meeting-details-list dt").each(function (i) {
+  $card.find(".meeting-details-list dt").each(function () {
     const label = $(this).text().trim().toLowerCase();
     const value = $(this).next("dd").text().trim();
     if (label === "time") meeting.time = value;
@@ -349,7 +189,7 @@ function parseInPersonCard($, card) {
     else if (label === "postcode") meeting.postcode = value;
   });
 
-  // Fallback: regex-based extraction from text
+  // Fallback: regex-based extraction
   if (!meeting.time) {
     const timeMatch = text.match(/Time\s+(\d{1,2}:\d{2}[–-]\d{1,2}:\d{2})/);
     if (timeMatch) meeting.time = timeMatch[1];
@@ -373,7 +213,6 @@ function parseInPersonCard($, card) {
     const feat = $(this).text().trim();
     if (feat) features.push(feat);
   });
-  // Fallback
   if (features.length === 0) {
     if (text.includes("Wheelchair Access")) features.push("Wheelchair Access");
     if (/Sign [Ll]anguage/.test(text)) features.push("Sign Language");
@@ -408,7 +247,6 @@ function parseOnlineCard($, card) {
   const $card = $(card);
   const text = $card.text().replace(/\s+/g, " ").trim();
 
-  // Day
   const dayEl = $card.find(".card-heading").first();
   if (dayEl.length) {
     meeting.day = dayEl.text().trim();
@@ -421,7 +259,6 @@ function parseOnlineCard($, card) {
     }
   }
 
-  // Name and detail URL
   const nameLink = $card.find(".meeting-card__heading-link, h3 a, h2 a").first();
   if (nameLink.length) {
     meeting.name = nameLink.text().trim();
@@ -434,7 +271,6 @@ function parseOnlineCard($, card) {
     if (nameH.length) meeting.name = nameH.text().trim();
   }
 
-  // Details from <dl>
   $card.find(".meeting-details-list dt").each(function () {
     const label = $(this).text().trim().toLowerCase();
     const value = $(this).next("dd").text().trim();
@@ -442,7 +278,6 @@ function parseOnlineCard($, card) {
     else if (label === "duration") meeting.duration = value;
   });
 
-  // Fallback
   if (!meeting.time) {
     const timeMatch = text.match(/Time\s+(\d{1,2}:\d{2}[–-]\d{1,2}:\d{2})/);
     if (timeMatch) meeting.time = timeMatch[1];
@@ -462,20 +297,17 @@ function parseOnlineCard($, card) {
 function parseResultsPage(html, formType) {
   const $ = cheerio.load(html);
 
-  // Total results
   let totalResults = 0;
   const bodyText = $("body").text();
   const totalMatch = bodyText.match(/Found (\d+) results/);
   if (totalMatch) totalResults = parseInt(totalMatch[1], 10);
 
-  // Resolved location
   let resolvedLocation = null;
   const locMatch = bodyText.match(
     /Found \d+ results for\s+(.+?)(?:\s*List|\s*Map|\s*PDF)/
   );
   if (locMatch) resolvedLocation = locMatch[1].trim();
 
-  // Meeting cards
   const cards = $(".meeting-card");
   const meetings = [];
   cards.each(function () {
@@ -486,7 +318,6 @@ function parseResultsPage(html, formType) {
     }
   });
 
-  // Pagination
   let maxPage = 1;
   $('a[href*="meeting_page="]').each(function () {
     const href = $(this).attr("href") || "";
@@ -541,7 +372,7 @@ async function searchMeetings(options = {}) {
 
   if (!html) {
     return {
-      error: "Failed to fetch results from AA website. The site may be temporarily unavailable or blocking automated requests.",
+      error: "Failed to fetch results from AA website. The site may be temporarily unavailable.",
       meetings: [],
       total_results: 0,
       max_page: 1,
@@ -580,6 +411,9 @@ async function getMeetingDetail(meetingId) {
 
   return detail;
 }
+
+// No browser to close with FlareSolverr approach
+async function closeBrowser() {}
 
 module.exports = {
   searchMeetings,
