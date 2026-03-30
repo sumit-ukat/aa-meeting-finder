@@ -1,6 +1,7 @@
 /**
  * Express server for Recovery Meeting Finder connector.
  * Provides unified API for searching AA, CA, and NA meetings.
+ * Includes client-side post-filtering as safety net for type, day, and time.
  */
 
 const express = require("express");
@@ -22,6 +23,89 @@ const FELLOWSHIP_NAMES = {
   ca: "Cocaine Anonymous",
   na: "Narcotics Anonymous",
 };
+
+/**
+ * Post-processing: classify a time string into a time-of-day bucket.
+ * Morning: 7am-12pm, Afternoon: 12pm-5pm, Evening: 5pm-10pm, Overnight/Late Night: 10pm-7am
+ */
+function classifyTimeBucket(timeStr) {
+  if (!timeStr) return null;
+  // Match various time formats: "18:00", "6:30 PM", "18:00-19:00", "6:30pm"
+  const match = timeStr.match(/(\d{1,2}):(\d{2})\s*(am|pm|AM|PM)?/);
+  if (!match) return null;
+  let hour = parseInt(match[1], 10);
+  const ampm = (match[3] || "").toLowerCase();
+  if (ampm === "pm" && hour < 12) hour += 12;
+  if (ampm === "am" && hour === 12) hour = 0;
+  if (hour >= 7 && hour < 12) return "morning";
+  if (hour >= 12 && hour < 17) return "afternoon";
+  if (hour >= 17 && hour < 22) return "evening";
+  return "overnight"; // 22-7
+}
+
+/**
+ * Map short day codes to full day names for matching.
+ */
+const DAY_CODE_TO_NAMES = {
+  mon: ["monday"],
+  tue: ["tuesday"],
+  wed: ["wednesday"],
+  thu: ["thursday"],
+  fri: ["friday"],
+  sat: ["saturday"],
+  sun: ["sunday"],
+};
+
+/**
+ * Post-filter meetings by formType, days, and times.
+ * This acts as a safety net when source websites don't properly filter.
+ */
+function postFilterMeetings(meetings, formType, days, times) {
+  let filtered = meetings;
+
+  // Filter by meeting type (in_person vs online)
+  filtered = filtered.filter(m => {
+    const mType = (m.type || "").toLowerCase();
+    if (formType === "in_person") {
+      // Keep meetings that are NOT online (in_person, empty, or any non-online value)
+      return mType !== "online";
+    } else if (formType === "online") {
+      return mType === "online";
+    }
+    return true;
+  });
+
+  // Filter by day
+  if (days && days.length > 0) {
+    const allowedDays = new Set();
+    for (const d of days) {
+      const names = DAY_CODE_TO_NAMES[d.toLowerCase()];
+      if (names) names.forEach(n => allowedDays.add(n));
+    }
+    filtered = filtered.filter(m => {
+      if (!m.day) return true; // Keep meetings with unknown day
+      const meetingDay = m.day.toLowerCase().trim();
+      // Check if any allowed day name is contained in the meeting's day field
+      for (const allowed of allowedDays) {
+        if (meetingDay.includes(allowed)) return true;
+      }
+      return false;
+    });
+  }
+
+  // Filter by time bucket
+  if (times && times.length > 0) {
+    const allowedTimes = new Set(times.map(t => t.toLowerCase()));
+    filtered = filtered.filter(m => {
+      if (!m.time) return true; // Keep meetings with unknown time
+      const bucket = classifyTimeBucket(m.time);
+      if (!bucket) return true; // Keep if we can't classify
+      return allowedTimes.has(bucket);
+    });
+  }
+
+  return filtered;
+}
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -90,6 +174,18 @@ app.get("/api/search", async (req, res) => {
       sort,
       page,
     });
+
+    // Post-filter meetings as safety net (source sites may not filter correctly)
+    const beforeCount = result.meetings ? result.meetings.length : 0;
+    if (result.meetings && result.meetings.length > 0) {
+      result.meetings = postFilterMeetings(result.meetings, formType, days, times);
+      const afterCount = result.meetings.length;
+      if (beforeCount !== afterCount) {
+        console.log(`[Server] Post-filter: ${beforeCount} -> ${afterCount} meetings (formType=${formType}, days=${days}, times=${times})`);
+      }
+      // Update total_results to reflect filtered count
+      result.total_results = result.meetings.length;
+    }
 
     // Add fellowship info to the result
     result.fellowship = fellowship;

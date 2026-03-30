@@ -235,7 +235,12 @@ function parseInPersonCard($, card) {
     }
   }
 
-  meeting.type = "in_person";
+  // Check if this card actually looks like an online meeting despite being on the in-person page
+  if (/online|zoom|virtual|teams/i.test(text) && !meeting.location) {
+    meeting.type = "online";
+  } else {
+    meeting.type = "in_person";
+  }
   return meeting;
 }
 

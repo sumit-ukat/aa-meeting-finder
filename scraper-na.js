@@ -283,8 +283,14 @@ function parseMeetingItem($, item) {
     if (pcMatch) meeting.postcode = pcMatch[1].toUpperCase();
   }
 
-  // Type default
-  if (!meeting.type) meeting.type = "in_person";
+  // Type detection - check text content for online indicators
+  if (!meeting.type) {
+    if (/online|zoom|virtual|teams|skype/i.test(text)) {
+      meeting.type = "online";
+    } else {
+      meeting.type = "in_person";
+    }
+  }
 
   // Directions URL - look for Google Maps link
   const dirLink = $item.find('a[href*="google.com/maps"], a[href*="maps.google"]').first();

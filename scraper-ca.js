@@ -63,11 +63,11 @@ function buildSearchUrl(formType, options = {}) {
     params.set("tsml-near", location);
   }
 
-  // Type filter
+  // Type filter - TSML uses "in-person" (hyphen), not "in_person" (underscore)
   if (formType === "online") {
-    params.set("tsml-type", "online");
+    params.set("tsml-type", "ONL");
   } else {
-    params.set("tsml-type", "in_person");
+    params.set("tsml-type", "in-person");
   }
 
   // Day filter - TSML only supports a single day parameter at a time.
