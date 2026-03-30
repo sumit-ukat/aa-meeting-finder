@@ -6,7 +6,6 @@ RUN apt-get update && apt-get install -y \
     gnupg \
     ca-certificates \
     fonts-liberation \
-    libappindicator3-1 \
     libasound2 \
     libatk-bridge2.0-0 \
     libatk1.0-0 \
@@ -27,11 +26,11 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
+# Set cache dir before npm ci so Puppeteer downloads Chrome to the right place
+ENV PUPPETEER_CACHE_DIR=/app/.cache/puppeteer
+
 COPY package*.json ./
 RUN npm ci
-
-# Puppeteer downloads Chromium during npm ci
-ENV PUPPETEER_CACHE_DIR=/app/.cache/puppeteer
 
 COPY . .
 
