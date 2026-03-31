@@ -1,15 +1,14 @@
 /**
  * AA Meeting Scraper
  * Scrapes meeting data from alcoholics-anonymous.org.uk
- * Uses FlareSolverr to bypass Cloudflare protection.
- * Supports both in-person and online meetings with filtering by day, time, and location.
+ * Uses direct HTTP fetch with browser User-Agent (bypasses Cloudflare managed challenge).
  */
 
 const cheerio = require("cheerio");
 const fetch = require("node-fetch");
 
 const BASE_URL = "https://www.alcoholics-anonymous.org.uk/find-a-meeting/";
-const FLARESOLVERR_URL = process.env.FLARESOLVERR_URL || "http://localhost:8191/v1";
+const BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
 const VALID_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const VALID_TIMES = ["morning", "afternoon", "evening", "overnight"];
@@ -26,7 +25,7 @@ async function geocodeLocation(locationText, country = "United Kingdom") {
     const url = `https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1`;
     console.log(`[Scraper] Geocoding: ${locationText}`);
     const resp = await fetch(url, {
-      headers: { "User-Agent": "aa-meeting-finder-connector/1.0" },
+      headers: { "User-Agent": "recovery-meeting-finder/1.0" },
     });
     const data = await resp.json();
     if (data && data.length > 0) {
@@ -87,51 +86,68 @@ function buildSearchUrl(formType, options = {}) {
 }
 
 /**
- * Fetch a page using FlareSolverr to handle Cloudflare challenges.
+ * Fetch a page using direct HTTP with browser User-Agent.
  */
 async function fetchPage(url, retries = 2) {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      console.log(`[Scraper] FlareSolverr request attempt ${attempt + 1}/${retries + 1} for ${url}`);
+      console.log(`[Scraper] HTTP fetch attempt ${attempt + 1}/${retries + 1} for ${url}`);
 
-      const resp = await fetch(FLARESOLVERR_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          cmd: "request.get",
-          url: url,
-          maxTimeout: 45000,
-        }),
+      const resp = await fetch(url, {
+        headers: {
+          "User-Agent": BROWSER_UA,
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "en-GB,en;q=0.9",
+          "Accept-Encoding": "gzip, deflate, br",
+          "Cache-Control": "no-cache",
+        },
+        timeout: 25000,
       });
 
-      const data = await resp.json();
+      console.log(`[Scraper] HTTP ${resp.status}`);
 
-      if (data.status === "ok" && data.solution) {
-        const html = data.solution.response;
-        console.log(`[Scraper] FlareSolverr got HTML (${html.length} chars), status: ${data.solution.status}`);
-
-        if (html.includes("meeting-card") || html.includes("results-section") || html.includes("meeting-form")) {
-          console.log("[Scraper] Found meeting content in response");
-          return html;
+      if (resp.status === 403) {
+        console.log("[Scraper] Got 403 — Cloudflare may be blocking");
+        if (attempt < retries) {
+          await new Promise(r => setTimeout(r, 3000 * (attempt + 1)));
+          continue;
         }
-
-        console.log("[Scraper] No meeting content in FlareSolverr response");
-        const snippet = html.substring(0, 300).replace(/\s+/g, " ");
-        console.log(`[Scraper] Snippet: ${snippet}`);
-      } else {
-        console.log(`[Scraper] FlareSolverr returned status: ${data.status}, message: ${data.message || "none"}`);
+        return null;
       }
 
-      if (attempt < retries) {
-        const delay = 3000 * (attempt + 1);
-        console.log(`[Scraper] Retrying in ${delay}ms...`);
-        await new Promise((r) => setTimeout(r, delay));
+      if (!resp.ok) {
+        console.log(`[Scraper] Non-OK response: ${resp.status}`);
+        if (attempt < retries) {
+          await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+          continue;
+        }
+        return null;
       }
+
+      const html = await resp.text();
+      console.log(`[Scraper] Got HTML (${html.length} chars)`);
+
+      if (html.includes("meeting-card") || html.includes("results-section") || html.includes("meeting-form")) {
+        console.log("[Scraper] Found meeting content in response");
+        return html;
+      }
+
+      // Check if we got a Cloudflare challenge page
+      if (html.includes("Just a moment") || html.includes("cf-browser-verification")) {
+        console.log("[Scraper] Got Cloudflare challenge page, retrying...");
+        if (attempt < retries) {
+          await new Promise(r => setTimeout(r, 3000 * (attempt + 1)));
+          continue;
+        }
+      }
+
+      // Return HTML anyway - might have different content structure
+      console.log("[Scraper] No meeting-card found but returning HTML for parsing");
+      return html;
     } catch (e) {
-      console.error(`[Scraper] FlareSolverr error on attempt ${attempt + 1}: ${e.message}`);
+      console.error(`[Scraper] Fetch error on attempt ${attempt + 1}: ${e.message}`);
       if (attempt < retries) {
-        const delay = 3000 * (attempt + 1);
-        await new Promise((r) => setTimeout(r, delay));
+        await new Promise(r => setTimeout(r, 3000 * (attempt + 1)));
       }
     }
   }
@@ -417,7 +433,6 @@ async function getMeetingDetail(meetingId) {
   return detail;
 }
 
-// No browser to close with FlareSolverr approach
 async function closeBrowser() {}
 
 module.exports = {
