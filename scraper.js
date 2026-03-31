@@ -363,7 +363,7 @@ async function searchMeetings(options = {}) {
 
   if (!html) {
     return {
-      error: "Failed to fetch results from AA website. The site may be temporarily unavailable.",
+      error: "AA meetings are temporarily unavailable due to website access restrictions. Please search directly at <a href='https://www.alcoholics-anonymous.org.uk/find-a-meeting/' target='_blank'>alcoholics-anonymous.org.uk</a>",
       meetings: [],
       total_results: 0,
       max_page: 1,
