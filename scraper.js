@@ -9,6 +9,8 @@ const fetch = require("node-fetch");
 const { execSync } = require("child_process");
 
 const BASE_URL = "https://www.alcoholics-anonymous.org.uk/find-a-meeting/";
+// curl-impersonate binary name (set in Dockerfile, falls back to regular curl)
+const CURL_BIN = process.env.CURL_CHROME || "curl_chrome116";
 const BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
 const VALID_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
@@ -96,7 +98,7 @@ function fetchPage(url, retries = 2) {
       console.log(`[Scraper] curl fetch attempt ${attempt + 1}/${retries + 1} for ${url}`);
 
       const html = execSync(
-        `curl -s --max-time 20 -H "User-Agent: ${BROWSER_UA}" -H "Accept: text/html" -H "Accept-Language: en-GB,en;q=0.9" "${url}"`,
+        `${CURL_BIN} -s --max-time 20 -H "Accept: text/html" -H "Accept-Language: en-GB,en;q=0.9" "${url}"`,
         { encoding: "utf8", maxBuffer: 20 * 1024 * 1024, timeout: 25000 }
       );
 
