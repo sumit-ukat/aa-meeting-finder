@@ -215,14 +215,20 @@ app.get("/api/debug", (req, res) => {
     results.curl = execSync("which curl 2>&1 || echo 'NOT FOUND'", { encoding: "utf8" }).trim();
   } catch (e) { results.curl = `error: ${e.message}`; }
   try {
-    results.curl_test = execSync("curl_chrome116 -s --max-time 10 -o /dev/null -w '%{http_code}' 'https://meetings.cocaineanonymous.org.uk/meetings/' 2>&1", { encoding: "utf8", timeout: 15000 }).trim();
-  } catch (e) { results.curl_test = `error: ${e.message.substring(0, 200)}`; }
+    results.cat_script = execSync("head -5 /usr/local/bin/curl_chrome116 2>&1 || echo 'N/A'", { encoding: "utf8" }).trim();
+  } catch (e) { results.cat_script = `error: ${e.message.substring(0, 200)}`; }
+  try {
+    results.ldd_binary = execSync("ldd /usr/local/bin/curl-impersonate-chrome 2>&1 | head -15 || echo 'N/A'", { encoding: "utf8" }).trim();
+  } catch (e) { results.ldd_binary = `error: ${e.message.substring(0, 200)}`; }
+  try {
+    results.ls_lib = execSync("ls /usr/local/lib/libcurl* 2>&1 || echo 'none'", { encoding: "utf8" }).trim();
+  } catch (e) { results.ls_lib = `error: ${e.message}`; }
+  try {
+    results.test_direct = execSync("LD_LIBRARY_PATH=/usr/local/lib CURL_IMPERSONATE=chrome116 /usr/local/bin/curl-impersonate-chrome -s --max-time 10 -o /dev/null -w '%{http_code}' 'https://meetings.cocaineanonymous.org.uk/meetings/' 2>&1", { encoding: "utf8", timeout: 15000 }).trim();
+  } catch (e) { results.test_direct = `error: ${e.message.substring(0, 200)}`; }
   try {
     results.ls_bin = execSync("ls /usr/local/bin/curl* 2>&1 || echo 'none'", { encoding: "utf8" }).trim();
   } catch (e) { results.ls_bin = `error: ${e.message}`; }
-  try {
-    results.ldd = execSync("ldd /usr/local/bin/curl_chrome116 2>&1 | head -10 || echo 'N/A'", { encoding: "utf8" }).trim();
-  } catch (e) { results.ldd = `error: ${e.message.substring(0, 200)}`; }
   res.json(results);
 });
 
