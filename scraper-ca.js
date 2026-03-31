@@ -7,6 +7,7 @@
 
 const cheerio = require("cheerio");
 const fetch = require("node-fetch");
+const { execSync } = require("child_process");
 
 const BASE_URL = "https://meetings.cocaineanonymous.org.uk/meetings/";
 
@@ -26,34 +27,29 @@ const TSML_DAY_TO_NAME = {
 };
 
 /**
- * Fetch the meetings page HTML directly (no FlareSolverr needed).
+ * Fetch the meetings page HTML using curl (consistent with AA/NA approach).
+ * Uses curl to bypass potential Cloudflare/IP blocking on datacenter IPs.
  */
-async function fetchPage(retries = 2) {
+function fetchPage(retries = 2) {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      console.log(`[CA-Scraper] Fetching HTML attempt ${attempt + 1}/${retries + 1}`);
-      const resp = await fetch(BASE_URL, {
-        headers: {
-          "User-Agent": BROWSER_UA,
-          "Accept": "text/html,application/xhtml+xml",
-          "Accept-Language": "en-GB,en;q=0.9",
-        },
-        timeout: 20000,
-      });
+      console.log(`[CA-Scraper] curl fetch attempt ${attempt + 1}/${retries + 1}`);
+      const html = execSync(
+        `curl -s --max-time 20 -H "User-Agent: ${BROWSER_UA}" -H "Accept: text/html" -H "Accept-Language: en-GB,en;q=0.9" "${BASE_URL}"`,
+        { encoding: "utf8", maxBuffer: 20 * 1024 * 1024, timeout: 25000 }
+      );
 
-      if (!resp.ok) {
-        console.log(`[CA-Scraper] HTTP ${resp.status}`);
-        continue;
+      console.log(`[CA-Scraper] Got HTML (${html.length} chars)`);
+
+      if (html.includes("Just a moment")) {
+        console.log("[CA-Scraper] Got Cloudflare challenge");
+        if (attempt < retries) continue;
+        return null;
       }
 
-      const html = await resp.text();
-      console.log(`[CA-Scraper] Got HTML (${html.length} chars)`);
       return html;
     } catch (e) {
       console.error(`[CA-Scraper] Fetch error attempt ${attempt + 1}: ${e.message}`);
-      if (attempt < retries) {
-        await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
-      }
     }
   }
   return null;
