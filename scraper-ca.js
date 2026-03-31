@@ -61,50 +61,47 @@ async function fetchPage(retries = 2) {
 
 /**
  * Extract the embedded `locations` JSON from the TSML page HTML.
- * TSML embeds all meeting data in a script tag as: var defined_something = [...];
+ * TSML embeds data as: var locations = {"id": {name, latitude, longitude, url, formatted_address, meetings: [...]}, ...};
+ * It's an OBJECT keyed by location ID, not an array.
  */
 function extractLocationsData(html) {
-  // TSML embeds data like: var defined_something = [{...}, ...]; or locations = [...]
-  // Look for JSON arrays in script tags
-  const $ = cheerio.load(html);
-  let locationsData = null;
+  // Find the var locations = {...}; assignment
+  // Use a robust approach: find the start, then find the matching closing brace
+  const marker = "var locations = ";
+  const startIdx = html.indexOf(marker);
+  if (startIdx === -1) {
+    console.log("[CA-Scraper] Could not find 'var locations' in HTML");
+    return null;
+  }
 
-  $("script").each(function () {
-    const content = $(this).html() || "";
-    // Match patterns like: var locations = [...] or tsml.locations = [...]
-    const patterns = [
-      /(?:var\s+)?locations\s*=\s*(\[[\s\S]*?\]);/,
-      /(?:var\s+)?tsml_meetings\s*=\s*(\[[\s\S]*?\]);/,
-      /(?:var\s+)?meetings\s*=\s*(\[[\s\S]*?\]);/,
-      /(?:var\s+)?tsml\s*=\s*(\{[\s\S]*?\});/,
-    ];
-
-    for (const pat of patterns) {
-      const match = content.match(pat);
-      if (match) {
-        try {
-          const parsed = JSON.parse(match[1]);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            locationsData = parsed;
-            console.log(`[CA-Scraper] Found embedded locations array with ${parsed.length} entries`);
-            return false; // break each loop
-          }
-          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-            // Could be tsml config object with meetings array inside
-            if (parsed.meetings && Array.isArray(parsed.meetings)) {
-              locationsData = parsed.meetings;
-              console.log(`[CA-Scraper] Found embedded meetings in tsml object: ${locationsData.length} entries`);
-              return false;
-            }
-          }
-        } catch (e) {
-          // JSON parse failed, try next pattern
-        }
+  const jsonStart = startIdx + marker.length;
+  // Find the end by tracking brace depth
+  let depth = 0;
+  let endIdx = jsonStart;
+  for (let i = jsonStart; i < html.length; i++) {
+    if (html[i] === "{") depth++;
+    else if (html[i] === "}") {
+      depth--;
+      if (depth === 0) {
+        endIdx = i + 1;
+        break;
       }
     }
-  });
+  }
 
-  return locationsData;
+  const jsonStr = html.substring(jsonStart, endIdx);
+  try {
+    const parsed = JSON.parse(jsonStr);
+    // Convert object to array of location values
+    const locations = Object.values(parsed);
+    console.log(`[CA-Scraper] Found embedded locations object with ${locations.length} locations`);
+    return locations;
+  } catch (e) {
+    console.error(`[CA-Scraper] Failed to parse locations JSON: ${e.message}`);
+    // Try a smaller chunk in case of trailing content
+    console.log(`[CA-Scraper] JSON snippet: ${jsonStr.substring(0, 200)}`);
+    return null;
+  }
 }
 
 /**
@@ -140,6 +137,29 @@ function convertLocationsToMeetings(locations) {
   return meetings;
 }
 
+/**
+ * Decode HTML entities in a string.
+ */
+function decodeHtmlEntities(str) {
+  if (!str) return str;
+  return str
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#039;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&#\d+;/g, match => {
+      const code = parseInt(match.slice(2, -1), 10);
+      return String.fromCharCode(code);
+    })
+    .replace(/&[a-z]+;/gi, match => {
+      // For named entities we can't easily decode, return as-is
+      const entities = { '&oacute;': 'ó', '&eacute;': 'é', '&aacute;': 'á', '&uacute;': 'ú', '&iacute;': 'í', '&ntilde;': 'ñ' };
+      return entities[match.toLowerCase()] || match;
+    });
+}
+
 function convertSingleMeeting(m, locName, locAddress, locLat, locLng) {
   const dayNum = parseInt(m.day, 10);
   const dayName = TSML_DAY_TO_NAME[dayNum] || null;
@@ -149,7 +169,7 @@ function convertSingleMeeting(m, locName, locAddress, locLat, locLng) {
                    /online|zoom|virtual/i.test(m.name || "");
 
   return {
-    name: m.name || locName || "Meeting",
+    name: decodeHtmlEntities(m.name || locName || "Meeting"),
     day: dayName,
     time: m.time || null,
     duration: null,
