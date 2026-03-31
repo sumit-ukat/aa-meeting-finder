@@ -1,25 +1,23 @@
-FROM lwthiker/curl-impersonate:0.6-chrome AS curl-impersonate
-
 FROM node:20-slim
 
-# Copy curl-impersonate binaries and all required libraries
-COPY --from=curl-impersonate /usr/local/bin/curl-impersonate-chrome /usr/local/bin/
-COPY --from=curl-impersonate /usr/local/bin/curl_chrome116 /usr/local/bin/
-COPY --from=curl-impersonate /usr/local/lib/ /usr/local/lib/
-
-# Install runtime dependencies
+# Install curl-impersonate (glibc/GNU build) to bypass Cloudflare TLS fingerprinting
 RUN apt-get update && apt-get install -y \
     ca-certificates \
+    wget \
     libnss3 \
     libnspr4 \
     libbrotli1 \
     libnghttp2-14 \
     --no-install-recommends \
-    && rm -rf /var/lib/apt/lists/* \
-    && ldconfig
+    && wget -q https://github.com/lwthiker/curl-impersonate/releases/download/v0.6.1/curl-impersonate-v0.6.1.x86_64-linux-gnu.tar.gz \
+    && mkdir -p /usr/local/lib/curl-impersonate \
+    && tar -xzf curl-impersonate-v0.6.1.x86_64-linux-gnu.tar.gz -C /usr/local/lib/curl-impersonate/ \
+    && ln -s /usr/local/lib/curl-impersonate/curl-impersonate-chrome /usr/local/bin/curl-impersonate-chrome \
+    && ln -s /usr/local/lib/curl-impersonate/curl_chrome116 /usr/local/bin/curl_chrome116 \
+    && rm curl-impersonate-v0.6.1.x86_64-linux-gnu.tar.gz \
+    && apt-get remove -y wget && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
 
-# Set library path for curl-impersonate
-ENV LD_LIBRARY_PATH=/usr/local/lib
 ENV CURL_CHROME=curl_chrome116
 
 WORKDIR /app
