@@ -204,6 +204,28 @@ app.get("/api/search", async (req, res) => {
   }
 });
 
+// Debug: Check curl availability
+app.get("/api/debug", (req, res) => {
+  const { execSync } = require("child_process");
+  const results = {};
+  try {
+    results.curl_chrome = execSync("which curl_chrome116 2>&1 || echo 'NOT FOUND'", { encoding: "utf8" }).trim();
+  } catch (e) { results.curl_chrome = `error: ${e.message}`; }
+  try {
+    results.curl = execSync("which curl 2>&1 || echo 'NOT FOUND'", { encoding: "utf8" }).trim();
+  } catch (e) { results.curl = `error: ${e.message}`; }
+  try {
+    results.curl_test = execSync("curl_chrome116 -s --max-time 10 -o /dev/null -w '%{http_code}' 'https://meetings.cocaineanonymous.org.uk/meetings/' 2>&1", { encoding: "utf8", timeout: 15000 }).trim();
+  } catch (e) { results.curl_test = `error: ${e.message.substring(0, 200)}`; }
+  try {
+    results.ls_bin = execSync("ls /usr/local/bin/curl* 2>&1 || echo 'none'", { encoding: "utf8" }).trim();
+  } catch (e) { results.ls_bin = `error: ${e.message}`; }
+  try {
+    results.ldd = execSync("ldd /usr/local/bin/curl_chrome116 2>&1 | head -10 || echo 'N/A'", { encoding: "utf8" }).trim();
+  } catch (e) { results.ldd = `error: ${e.message.substring(0, 200)}`; }
+  res.json(results);
+});
+
 // API: Meeting detail (AA only for now)
 app.get("/api/meeting/:id", async (req, res) => {
   try {
