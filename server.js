@@ -204,6 +204,31 @@ app.get("/api/search", async (req, res) => {
   }
 });
 
+// Debug: Test NA raw fetch
+app.get("/api/debug-na", (req, res) => {
+  const { execSync } = require("child_process");
+  const results = {};
+  try {
+    const raw = execSync("curl_chrome116 -s --max-time 15 'https://meetings.ukna.org/jsonapi/node/meeting?page%5Blimit%5D=3' 2>&1", { encoding: "utf8", maxBuffer: 5 * 1024 * 1024, timeout: 20000 });
+    results.length = raw.length;
+    results.is_json = raw.trim().startsWith("{");
+    results.is_cf = raw.includes("Just a moment");
+    if (results.is_json) {
+      try {
+        const d = JSON.parse(raw);
+        results.count = d.data ? d.data.length : 0;
+        if (d.data && d.data[0]) {
+          const a = d.data[0].attributes;
+          results.sample = { title: a.title, day: a.field_meeting_day, type: a.field_meeting_type, times: a.field_meeting_times, town: a.field_meeting_town };
+        }
+      } catch(e) { results.parse_error = e.message; }
+    } else {
+      results.snippet = raw.substring(0, 200);
+    }
+  } catch (e) { results.error = e.message.substring(0, 300); }
+  res.json(results);
+});
+
 // Debug: Check curl availability
 app.get("/api/debug", (req, res) => {
   const { execSync } = require("child_process");
