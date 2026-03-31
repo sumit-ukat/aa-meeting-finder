@@ -6,6 +6,7 @@
 
 const cheerio = require("cheerio");
 const fetch = require("node-fetch");
+const { execSync } = require("child_process");
 
 const BASE_URL = "https://www.alcoholics-anonymous.org.uk/find-a-meeting/";
 const BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
@@ -86,69 +87,36 @@ function buildSearchUrl(formType, options = {}) {
 }
 
 /**
- * Fetch a page using direct HTTP with browser User-Agent.
+ * Fetch a page using curl (bypasses Cloudflare TLS fingerprinting).
+ * node-fetch gets 403 from Cloudflare, but curl's TLS stack passes.
  */
-async function fetchPage(url, retries = 2) {
+function fetchPage(url, retries = 2) {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      console.log(`[Scraper] HTTP fetch attempt ${attempt + 1}/${retries + 1} for ${url}`);
+      console.log(`[Scraper] curl fetch attempt ${attempt + 1}/${retries + 1} for ${url}`);
 
-      const resp = await fetch(url, {
-        headers: {
-          "User-Agent": BROWSER_UA,
-          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "Accept-Language": "en-GB,en;q=0.9",
-          "Accept-Encoding": "gzip, deflate, br",
-          "Cache-Control": "no-cache",
-        },
-        timeout: 25000,
-      });
+      const html = execSync(
+        `curl -s --max-time 20 -H "User-Agent: ${BROWSER_UA}" -H "Accept: text/html" -H "Accept-Language: en-GB,en;q=0.9" "${url}"`,
+        { encoding: "utf8", maxBuffer: 20 * 1024 * 1024, timeout: 25000 }
+      );
 
-      console.log(`[Scraper] HTTP ${resp.status}`);
-
-      if (resp.status === 403) {
-        console.log("[Scraper] Got 403 — Cloudflare may be blocking");
-        if (attempt < retries) {
-          await new Promise(r => setTimeout(r, 3000 * (attempt + 1)));
-          continue;
-        }
-        return null;
-      }
-
-      if (!resp.ok) {
-        console.log(`[Scraper] Non-OK response: ${resp.status}`);
-        if (attempt < retries) {
-          await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
-          continue;
-        }
-        return null;
-      }
-
-      const html = await resp.text();
       console.log(`[Scraper] Got HTML (${html.length} chars)`);
 
-      if (html.includes("meeting-card") || html.includes("results-section") || html.includes("meeting-form")) {
-        console.log("[Scraper] Found meeting content in response");
+      if (html.includes("Just a moment") || html.includes("cf-browser-verification")) {
+        console.log("[Scraper] Got Cloudflare challenge page");
+        if (attempt < retries) continue;
+        return null;
+      }
+
+      if (html.includes("meeting-card") || html.includes("results-section") || html.includes("meeting-form") || html.length > 5000) {
         return html;
       }
 
-      // Check if we got a Cloudflare challenge page
-      if (html.includes("Just a moment") || html.includes("cf-browser-verification")) {
-        console.log("[Scraper] Got Cloudflare challenge page, retrying...");
-        if (attempt < retries) {
-          await new Promise(r => setTimeout(r, 3000 * (attempt + 1)));
-          continue;
-        }
-      }
-
-      // Return HTML anyway - might have different content structure
-      console.log("[Scraper] No meeting-card found but returning HTML for parsing");
+      console.log("[Scraper] Response too small or missing content");
+      if (attempt < retries) continue;
       return html;
     } catch (e) {
-      console.error(`[Scraper] Fetch error on attempt ${attempt + 1}: ${e.message}`);
-      if (attempt < retries) {
-        await new Promise(r => setTimeout(r, 3000 * (attempt + 1)));
-      }
+      console.error(`[Scraper] curl error on attempt ${attempt + 1}: ${e.message}`);
     }
   }
   console.error("[Scraper] All fetch attempts failed");

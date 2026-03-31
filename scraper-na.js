@@ -5,6 +5,7 @@
  */
 
 const fetch = require("node-fetch");
+const { execSync } = require("child_process");
 
 const JSON_API_URL = "https://meetings.ukna.org/jsonapi/node/meeting";
 const BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
@@ -19,41 +20,30 @@ const DAY_CODE_TO_NAME = {
 };
 
 /**
- * Fetch meetings from Drupal JSON:API.
- * Supports pagination via page[limit] and page[offset].
+ * Fetch meetings from Drupal JSON:API using curl (bypasses Cloudflare TLS fingerprinting).
  */
-async function fetchMeetings(limit = 50, offset = 0, retries = 2) {
-  const url = `${JSON_API_URL}?page[limit]=${limit}&page[offset]=${offset}`;
+function fetchMeetings(limit = 50, offset = 0, retries = 2) {
+  const url = `${JSON_API_URL}?page%5Blimit%5D=${limit}&page%5Boffset%5D=${offset}`;
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      console.log(`[NA-Scraper] JSON:API request attempt ${attempt + 1}/${retries + 1}: limit=${limit}, offset=${offset}`);
-      const resp = await fetch(url, {
-        headers: {
-          "User-Agent": BROWSER_UA,
-          "Accept": "application/vnd.api+json,application/json",
-          "Accept-Language": "en-GB,en;q=0.9",
-        },
-        timeout: 25000,
-      });
+      console.log(`[NA-Scraper] curl JSON:API attempt ${attempt + 1}/${retries + 1}: limit=${limit}, offset=${offset}`);
+      const raw = execSync(
+        `curl -s --max-time 20 -H "User-Agent: ${BROWSER_UA}" -H "Accept: application/vnd.api+json,application/json" "${url}"`,
+        { encoding: "utf8", maxBuffer: 20 * 1024 * 1024, timeout: 25000 }
+      );
 
-      if (!resp.ok) {
-        console.log(`[NA-Scraper] HTTP ${resp.status}`);
-        if (attempt < retries) {
-          await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
-          continue;
-        }
+      if (raw.includes("Just a moment")) {
+        console.log("[NA-Scraper] Got Cloudflare challenge");
+        if (attempt < retries) continue;
         return null;
       }
 
-      const data = await resp.json();
+      const data = JSON.parse(raw);
       console.log(`[NA-Scraper] Got ${data.data ? data.data.length : 0} meetings from JSON:API`);
       return data;
     } catch (e) {
       console.error(`[NA-Scraper] Fetch error attempt ${attempt + 1}: ${e.message}`);
-      if (attempt < retries) {
-        await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
-      }
     }
   }
   return null;
@@ -75,7 +65,7 @@ async function fetchAllMeetings() {
 
   const allMeetings = [];
   let offset = 0;
-  const limit = 50;
+  const limit = 200; // Fetch in larger batches to reduce number of requests
 
   while (true) {
     const data = await fetchMeetings(limit, offset);
