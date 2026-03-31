@@ -58,7 +58,7 @@ let cachedMeetings = null;
 let cacheTimestamp = 0;
 const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
-async function fetchAllMeetings() {
+function fetchAllMeetings() {
   if (cachedMeetings && (Date.now() - cacheTimestamp < CACHE_TTL)) {
     console.log(`[NA-Scraper] Using cached meetings (${cachedMeetings.length} meetings)`);
     return cachedMeetings;
@@ -66,19 +66,19 @@ async function fetchAllMeetings() {
 
   const allMeetings = [];
   let offset = 0;
-  const limit = 200; // Fetch in larger batches to reduce number of requests
+  const limit = 50; // Drupal JSON:API default max is 50
 
   while (true) {
-    const data = await fetchMeetings(limit, offset);
+    const data = fetchMeetings(limit, offset);
     if (!data || !data.data || data.data.length === 0) break;
 
     for (const item of data.data) {
       allMeetings.push(convertApiMeeting(item));
     }
 
-    // Check if there are more pages
-    if (data.data.length < limit || !data.links || !data.links.next) break;
-    offset += limit;
+    // Only stop if there's no next page link
+    if (!data.links || !data.links.next) break;
+    offset += data.data.length;
 
     // Safety limit
     if (offset > 2000) break;
@@ -223,8 +223,8 @@ async function searchMeetings(options = {}) {
 
   console.log(`[NA-Scraper] Search: formType=${formType}, location=${location}, days=${days}, times=${times}`);
 
-  // Fetch all meetings from JSON:API
-  const allMeetings = await fetchAllMeetings();
+  // Fetch all meetings from JSON:API (synchronous — uses curl)
+  const allMeetings = fetchAllMeetings();
 
   if (!allMeetings || allMeetings.length === 0) {
     return {
