@@ -224,8 +224,14 @@ app.get("/api/debug", (req, res) => {
     results.ls_lib = execSync("ls /usr/local/lib/libcurl* 2>&1 || echo 'none'", { encoding: "utf8" }).trim();
   } catch (e) { results.ls_lib = `error: ${e.message}`; }
   try {
-    results.test_direct = execSync("LD_LIBRARY_PATH=/usr/local/lib CURL_IMPERSONATE=chrome116 /usr/local/bin/curl-impersonate-chrome -s --max-time 10 -o /dev/null -w '%{http_code}' 'https://meetings.cocaineanonymous.org.uk/meetings/' 2>&1", { encoding: "utf8", timeout: 15000 }).trim();
-  } catch (e) { results.test_direct = `error: ${e.message.substring(0, 200)}`; }
+    results.test_ca = execSync("curl_chrome116 -s --max-time 10 -o /dev/null -w '%{http_code}' 'https://meetings.cocaineanonymous.org.uk/meetings/' 2>&1", { encoding: "utf8", timeout: 15000 }).trim();
+  } catch (e) { results.test_ca = `error: ${e.message.substring(0, 200)}`; }
+  try {
+    results.test_aa = execSync("curl_chrome116 -s --max-time 10 -o /dev/null -w '%{http_code}' 'https://www.alcoholics-anonymous.org.uk/find-a-meeting/?form=in_person&view=list' 2>&1", { encoding: "utf8", timeout: 15000 }).trim();
+  } catch (e) { results.test_aa = `error: ${e.message.substring(0, 200)}`; }
+  try {
+    results.test_na = execSync("curl_chrome116 -s --max-time 10 -o /dev/null -w '%{http_code}' 'https://meetings.ukna.org/jsonapi/node/meeting?page%5Blimit%5D=2' 2>&1", { encoding: "utf8", timeout: 15000 }).trim();
+  } catch (e) { results.test_na = `error: ${e.message.substring(0, 200)}`; }
   try {
     results.ls_bin = execSync("ls /usr/local/bin/curl* 2>&1 || echo 'none'", { encoding: "utf8" }).trim();
   } catch (e) { results.ls_bin = `error: ${e.message}`; }
