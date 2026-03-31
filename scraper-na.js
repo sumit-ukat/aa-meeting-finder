@@ -90,26 +90,36 @@ async function fetchAllMeetings() {
   return allMeetings;
 }
 
+// NA day numbers: 1=Sunday, 2=Monday, ..., 7=Saturday
+const NA_DAY_TO_NAME = {
+  1: "Sunday", 2: "Monday", 3: "Tuesday", 4: "Wednesday",
+  5: "Thursday", 6: "Friday", 7: "Saturday",
+};
+
+// NA type numbers: 1=in_person, 3=online (based on observed data)
+const NA_ONLINE_TYPES = [3];
+
 /**
  * Convert a JSON:API meeting node to our standard meeting format.
  */
 function convertApiMeeting(item) {
   const attrs = item.attributes || {};
 
-  // Day
-  const day = attrs.field_meeting_day || null;
+  // Day — numeric 1-7
+  const dayNum = parseInt(attrs.field_meeting_day, 10);
+  const day = NA_DAY_TO_NAME[dayNum] || null;
 
   // Time — field_meeting_times contains from/to in seconds from midnight
   let time = null;
   const times = attrs.field_meeting_times;
   if (times) {
-    const fromSec = parseInt(times.from, 10) || parseInt(times.value, 10);
-    const toSec = parseInt(times.to, 10) || parseInt(times.end_value, 10);
+    const fromSec = parseInt(times.from, 10);
+    const toSec = parseInt(times.to, 10);
     if (!isNaN(fromSec)) {
       const fromH = Math.floor(fromSec / 3600);
       const fromM = Math.floor((fromSec % 3600) / 60);
       const fromStr = `${String(fromH).padStart(2, "0")}:${String(fromM).padStart(2, "0")}`;
-      if (!isNaN(toSec)) {
+      if (!isNaN(toSec) && toSec > 0) {
         const toH = Math.floor(toSec / 3600);
         const toM = Math.floor((toSec % 3600) / 60);
         time = `${fromStr}-${String(toH).padStart(2, "0")}:${String(toM).padStart(2, "0")}`;
@@ -119,19 +129,20 @@ function convertApiMeeting(item) {
     }
   }
 
-  // Type
-  const meetingType = (attrs.field_meeting_type || "").toLowerCase();
+  // Type — field_meeting_type is a number. 1=in_person, 3=online
+  // Also check for online_link as backup indicator
+  const typeNum = parseInt(attrs.field_meeting_type, 10);
   const onlineLink = attrs.field_meeting_online_link;
-  const isOnline = meetingType.includes("online") || meetingType.includes("virtual") ||
-                   (onlineLink && onlineLink.uri);
+  const isOnline = NA_ONLINE_TYPES.includes(typeNum) ||
+                   (onlineLink && onlineLink.uri && !attrs.field_meeting_coordinates);
 
-  // Address
+  // Address — field_meeting_address might be null, use individual fields
   const addr = attrs.field_meeting_address || {};
   const addressParts = [
-    addr.address_line1,
-    addr.address_line2,
+    attrs.field_meeting_street || addr.address_line1,
+    attrs.field_meeting_address2 || addr.address_line2,
     attrs.field_meeting_town,
-    addr.administrative_area,
+    attrs.field_meeting_county,
   ].filter(Boolean);
   const location = addressParts.join(", ") || null;
   const postcode = attrs.field_meeting_postcode || addr.postal_code || null;
@@ -153,7 +164,9 @@ function convertApiMeeting(item) {
     location: isOnline ? null : fullLocation,
     postcode: postcode ? postcode.toUpperCase() : null,
     type: isOnline ? "online" : "in_person",
-    detail_url: `https://meetings.ukna.org/node/${item.id ? item.id.replace(/.*\//, "") : ""}`,
+    detail_url: attrs.path && attrs.path.alias
+      ? `https://meetings.ukna.org${attrs.path.alias}`
+      : `https://meetings.ukna.org/node/${attrs.drupal_internal__nid || ""}`,
     latitude: lat,
     longitude: lng,
     distance: null,

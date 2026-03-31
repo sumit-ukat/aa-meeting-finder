@@ -9,7 +9,8 @@ const fetch = require("node-fetch");
 const { execSync } = require("child_process");
 
 const BASE_URL = "https://www.alcoholics-anonymous.org.uk/find-a-meeting/";
-// curl-impersonate binary name (set in Dockerfile, falls back to regular curl)
+// curl-impersonate binary name — try multiple profiles for AA's strict Cloudflare
+const CURL_PROFILES = ["curl_chrome116", "curl_chrome110", "curl_chrome107"];
 const CURL_BIN = process.env.CURL_CHROME || "curl_chrome116";
 const BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
@@ -89,39 +90,38 @@ function buildSearchUrl(formType, options = {}) {
 }
 
 /**
- * Fetch a page using curl (bypasses Cloudflare TLS fingerprinting).
- * node-fetch gets 403 from Cloudflare, but curl's TLS stack passes.
+ * Fetch a page using curl-impersonate (bypasses Cloudflare TLS fingerprinting).
+ * Tries multiple Chrome profiles in case one is blocked.
  */
-function fetchPage(url, retries = 2) {
-  for (let attempt = 0; attempt <= retries; attempt++) {
+function fetchPage(url) {
+  for (const profile of CURL_PROFILES) {
     try {
-      console.log(`[Scraper] curl fetch attempt ${attempt + 1}/${retries + 1} for ${url}`);
+      console.log(`[Scraper] Trying ${profile} for ${url}`);
 
       const html = execSync(
-        `${CURL_BIN} -s --max-time 20 -H "Accept: text/html" -H "Accept-Language: en-GB,en;q=0.9" "${url}"`,
+        `${profile} -s --max-time 20 -H "Accept: text/html" -H "Accept-Language: en-GB,en;q=0.9" "${url}"`,
         { encoding: "utf8", maxBuffer: 20 * 1024 * 1024, timeout: 25000 }
       );
 
-      console.log(`[Scraper] Got HTML (${html.length} chars)`);
+      console.log(`[Scraper] Got ${html.length} chars from ${profile}`);
 
       if (html.includes("Just a moment") || html.includes("cf-browser-verification")) {
-        console.log("[Scraper] Got Cloudflare challenge page");
-        if (attempt < retries) continue;
-        return null;
+        console.log(`[Scraper] ${profile} got Cloudflare challenge, trying next profile...`);
+        continue;
       }
 
       if (html.includes("meeting-card") || html.includes("results-section") || html.includes("meeting-form") || html.length > 5000) {
         return html;
       }
 
-      console.log("[Scraper] Response too small or missing content");
-      if (attempt < retries) continue;
-      return html;
+      console.log("[Scraper] Response too small or missing expected content");
     } catch (e) {
-      console.error(`[Scraper] curl error on attempt ${attempt + 1}: ${e.message}`);
+      console.error(`[Scraper] ${profile} error: ${e.message.substring(0, 100)}`);
     }
   }
-  console.error("[Scraper] All fetch attempts failed");
+
+  // Fallback: try regular node-fetch as last resort
+  console.log("[Scraper] All curl profiles failed, trying node-fetch fallback...");
   return null;
 }
 
